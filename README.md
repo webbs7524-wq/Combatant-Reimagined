@@ -1,4 +1,5 @@
 #FORK NOTES fixed crash assistant triggering and added abunch of stuff
+<img width="1003" height="265" alt="logo" src="https://github.com/user-attachments/assets/4722f47c-6164-4dc7-a266-fd8bd4abf9cf" />
 
 # Combatant Client
 
