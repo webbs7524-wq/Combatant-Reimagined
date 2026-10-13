@@ -1,3 +1,5 @@
+#FORK NOTES fixed crash assistant triggering and added abunch of stuff
+
 # Combatant Client
 
 Combatant is an open-source utility and PvP client for **Minecraft 26.2 on Fabric**.
