@@ -43,6 +43,8 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
+import combatant.client.features.module.modules.combat.AutoShieldBreak;
+import combatant.client.features.module.modules.combat.SwapHit;
 import combatant.client.features.module.Modules;
 import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
@@ -51,6 +53,13 @@ import combatant.client.util.click.AttackPressing;
 import combatant.client.util.click.ClickHumanizer;
 import combatant.client.util.click.ClickScheduler;
 import combatant.client.util.combat.CombatStrikeController;
+import combatant.client.util.combat.AttackUtil;
+import combatant.client.util.player.inventory.InventoryActionKind;
+import combatant.client.util.player.inventory.InventorySearchScope;
+import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.player.inventory.InventorySwapPolicy;
+import combatant.client.util.player.inventory.InventorySwapRequest;
+import combatant.client.util.player.inventory.InventorySwapVisibility;
 import combatant.client.util.item.FoodUtil;
 import combatant.client.util.player.ResetAttackCooldown;
 import combatant.client.util.combat.protocol.CombatProtocolHeuristics;
@@ -62,7 +71,7 @@ import java.util.LinkedHashMap;
 @ModuleInfo(
         id = "triggerbot",
         displayName = "TriggerBot",
-        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.LEGIT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.LEGIT, experimental = true,
         description = "module.triggerbot.description")
 public class AutoAttack extends Module {
 
@@ -71,6 +80,10 @@ public class AutoAttack extends Module {
     private static final String TOGGLE_HUMANIZE_SWING = "miss_swing";
     private static final String TOGGLE_HUMANIZE_PAUSE = "pause";
     private final Minecraft mc = Minecraft.getInstance();
+    private final boolean axeForShield = getClass() == AutoShieldBreak.class;
+    private final boolean weaponSwapHit = getClass() == SwapHit.class;
+    private final boolean shieldBreak = axeForShield;
+
     private final ModeValue mode =
             mode(
                     "autoattack_mode",
@@ -303,7 +316,7 @@ public class AutoAttack extends Module {
             return;
         }
 
-        if (!isWeaponSelected(mc.player)) return;
+        if (!isWeaponSelected(mc.player) && !axeForShield && !shieldBreak) return;
 
         if (mc.gameMode != null && mc.gameMode.isDestroying()) {
             return;
@@ -403,6 +416,9 @@ public class AutoAttack extends Module {
             if (!(entityHit.getEntity() instanceof LivingEntity living) || !canAttackNow(mc.player, living)) {
                 return;
             }
+            if (axeForShield && (!(living instanceof Player targetPlayer) || !targetPlayer.isBlocking())) return;
+            if (weaponSwapHit && performSwapHit(living, false)) return;
+            if (shieldBreak && performSwapHit(living, true)) return;
         }
         performClick(mc.player, hit, clickCount);
     }
@@ -471,6 +487,26 @@ public class AutoAttack extends Module {
         return true;
     }
 
+    private boolean performSwapHit(LivingEntity target, boolean axeOnly) {
+        java.util.function.Predicate<ItemStack> weaponPredicate = axeOnly
+                ? stack -> stack.is(ItemTags.AXES)
+                : stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES)
+                    || stack.is(Items.MACE) || stack.is(Items.TRIDENT);
+        if (weaponPredicate.test(mc.player.getMainHandItem())) return false;
+        boolean[] attacked = {false};
+        InventorySwapRequest request = InventorySwapRequest.builder(weaponPredicate, () -> {
+                    if (mc.player == null || mc.gameMode == null || mc.player.isUsingItem()) return;
+                    attacked[0] = AttackUtil.attack(mc, target);
+                })
+                .scope(InventorySearchScope.FULL)
+                .visibility(InventorySwapVisibility.SILENT)
+                .restore(true)
+                .policy(InventorySwapPolicy.NONE)
+                .actionKind(InventoryActionKind.ATTACK_ENTITY)
+                .build();
+        return InventorySwap.INSTANCE.execute(request) || attacked[0];
+    }
+
     private boolean isWeaponSelected(LocalPlayer player) {
         ItemStack stack = player.getMainHandItem();
         return switch (weapon.get()) {
@@ -516,6 +552,13 @@ public class AutoAttack extends Module {
                 }
             }
         }
+    }
+
+    public void triggerMissClick() {
+        if (!isEnabled() || mc.player == null || mc.options == null || !mc.options.keyAttack.isDown()) return;
+        if (!isLegacyAttackProtocol() && mc.player.getAttackStrengthScale(0.5f) < 1.0f) return;
+        mc.gameMode.attack(mc.player, mc.player);
+        mc.player.swing(InteractionHand.MAIN_HAND);
     }
 
     public boolean isAutoMode() {

@@ -10,7 +10,6 @@ package combatant.client.features.module.modules.visuals.finder;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -28,8 +27,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Scores chunks by growth that only happens while a player keeps them loaded, plus amethyst
- * that anti-xray hides but block light still reveals. Port of 67Client's SusChunkScanner.
+ * Scores chunks by growth that only happens while a player keeps them loaded. Port of
+ * 67Client's SusChunkScanner.
  *
  * <p>Plants only random-tick inside simulation distance, so max-age kelp, tall bamboo, ripe
  * berries and long vines mean someone spent hours nearby. Each signal has a weight and a
@@ -47,8 +46,6 @@ public final class SusChunkFinder extends ChunkFinderModule<SusChunkFinder.Score
     private static final int SCAN_MIN_Y = -12;
     private static final int SCAN_MAX_Y = 80;
     private static final int POINTS_PER_SENSITIVITY = 5;
-    // Amethyst clusters emit exactly this block light; the cell keeps it even when hidden.
-    private static final int AMETHYST_CLUSTER_LIGHT = 5;
     private static final int MAX_COLUMN = 40;
 
     private final NumberValue<Integer> sensitivity = num("sensitivity", 5, 1, 10);
@@ -78,29 +75,11 @@ public final class SusChunkFinder extends ChunkFinderModule<SusChunkFinder.Score
     @Override
     protected Scored analyzeChunk(ClientLevel level, LevelChunk chunk) {
         Tally tally = new Tally();
-        if (signals.get(Signal.AMETHYST.id)) countHiddenAmethyst(level, chunk, tally);
         countGrowth(level, chunk, tally);
 
         double score = tally.score();
         if (score < sensitivity.get() * POINTS_PER_SENSITIVITY || tally.evidence == null) return null;
         return new Scored(tally.describe(score), tally.evidence, score);
-    }
-
-    // A cluster cell next to budding amethyst that still carries light 5: either a visible
-    // cluster, or air where anti-xray removed one. The server-sent light gives it away.
-    private void countHiddenAmethyst(ClientLevel level, LevelChunk chunk, Tally tally) {
-        ChunkBlocks.forEach(chunk, SCAN_MIN_Y, SCAN_MAX_Y, s -> s.is(Blocks.BUDDING_AMETHYST), (x, y, z, state) -> {
-            BlockPos budding = new BlockPos(x, y, z);
-            for (Direction face : Direction.values()) {
-                BlockPos cell = budding.relative(face);
-                BlockState cellState = level.getBlockState(cell);
-                if ((cellState.isAir() || cellState.is(Blocks.AMETHYST_CLUSTER))
-                        && level.getBrightness(LightLayer.BLOCK, cell) == AMETHYST_CLUSTER_LIGHT) {
-                    tally.add(Signal.AMETHYST, cell);
-                }
-            }
-            return !tally.capped(Signal.AMETHYST);
-        });
     }
 
     private void countGrowth(ClientLevel level, LevelChunk chunk, Tally tally) {
@@ -205,7 +184,6 @@ public final class SusChunkFinder extends ChunkFinderModule<SusChunkFinder.Score
     }
 
     private enum Signal {
-        AMETHYST("amethyst", "amethyst", 6.0, 16),
         KELP("kelp", "kelp", 2.0, 6),
         BAMBOO("bamboo", "bamboo", 2.0, 6),
         BERRIES("berries", "berries", 2.0, 5),

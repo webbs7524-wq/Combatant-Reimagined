@@ -148,6 +148,9 @@ public enum ClickGuiRenderer {
         if (textEditor != null) {
             textEditor.handleMouseMove(mouseX, mouseY);
         }
+        if (isInputReady() && picker == null && protocolHeuristicsEditor == null && textEditor == null) {
+            getActiveSection().mouseMoved(mouseX, mouseY);
+        }
     }
 
     public static void onMouseButton(double x, double y, int button, boolean pressed) {
@@ -172,6 +175,9 @@ public enum ClickGuiRenderer {
         }
         if (textEditor != null) {
             textEditor.handleMouseMove(mouseX, mouseY);
+        }
+        if (isInputReady() && picker == null && protocolHeuristicsEditor == null && textEditor == null) {
+            getActiveSection().mouseMoved(mouseX, mouseY);
         }
     }
 
@@ -689,9 +695,9 @@ public enum ClickGuiRenderer {
                 try (ProfilerPhase.Scope tabsScope = ProfilerPhase.scope("2d:clickgui:tabs");
                      RenderProfiler2D.Section ignoredTabs = RenderProfiler2D.section("tabs");
                      TracyGpuProfiler.Scope gpuScope = TracyGpuProfiler.beginZone("2d:clickgui:tabs")) {
-                    drawTabs();
-                }
-                try (ProfilerPhase.Scope textEditorScope = ProfilerPhase.scope("2d:clickgui:text_editor");
+            drawTabs();
+        }
+        try (ProfilerPhase.Scope textEditorScope = ProfilerPhase.scope("2d:clickgui:text_editor");
                      RenderProfiler2D.Section ignoredTextEditor = RenderProfiler2D.section("text_editor");
                      TracyGpuProfiler.Scope gpuScope = TracyGpuProfiler.beginZone("2d:clickgui:text_editor")) {
                     if (!closingForExit) {
@@ -818,6 +824,7 @@ public enum ClickGuiRenderer {
         float totalTabs = 0f;
         for (int t = 0; t < tabs.size(); t++) {
             float wTab = textWidth(getSfProDisplaySemibold(), tabs.get(t).label(), TAB_FONT) + TAB_PAD_X * 2f;
+
             if (wTab < TAB_MIN_W) wTab = TAB_MIN_W;
             tabW[t] = wTab;
             totalTabs += wTab;
@@ -832,7 +839,6 @@ public enum ClickGuiRenderer {
             tabX[t] = cx;
             cx += tabW[t] + TAB_GAP;
         }
-
         int activeIdx = 0;
         for (int t = 0; t < tabs.size(); t++) {
             if (tabs.get(t).id().equals(activeTabId)) {
@@ -895,7 +901,6 @@ public enum ClickGuiRenderer {
         ensureActiveTab(tabs);
         if (tabs.isEmpty()) return;
         boolean islandShell = DynamicIsland.shouldOwnClickGuiTabShell();
-        if (islandShell) return;
 
         TextRenderer tabFont = getOnestBold();
         float y = tabBarY - (1.0f - eased) * 18.0f;
@@ -958,17 +963,15 @@ public enum ClickGuiRenderer {
                 drawRoundedRectStrokeGradient(tabBarX, y, tabBarW, tabBarH, outerRadius, 1.0f, outerStrokeLeft, outerStrokeRight, 0.0f);
             }
 
-            drawRoundedRectGlow(
-                    innerX,
-                    innerY,
-                    innerW,
-                    innerH,
-                    innerRadius,
-                    10.0f,
-                    scaleAlpha(theme().accentSoft(), 0.30f * eased)
-            );
-            drawRoundedRectGradient(innerX, innerY, innerW, innerH, innerRadius, activeLeft, activeRight, 0.0f);
-            drawRoundedRectStrokeGradient(innerX, innerY, innerW, innerH, innerRadius, 1.0f, activeStrokeLeft, activeStrokeRight, 0.0f);
+            float activeX = tabAnimX;
+            float activeW = tabAnimW;
+            float highlightX = activeX + outerPad;
+            float highlightW = Math.max(1f, activeW - outerPad * 2f);
+            drawRoundedRectGlow(highlightX, innerY, highlightW, innerH, innerRadius, 10f,
+                    scaleAlpha(theme().accentSoft(), 0.30f * eased));
+            drawRoundedRectGradient(highlightX, innerY, highlightW, innerH, innerRadius, activeLeft, activeRight, 0f);
+            drawRoundedRectStrokeGradient(highlightX, innerY, highlightW, innerH, innerRadius, 1f,
+                    activeStrokeLeft, activeStrokeRight, 0f);
 
             for (int i = 0; i < tabs.size(); i++) {
                 float x = tabX[i];
@@ -1020,6 +1023,15 @@ public enum ClickGuiRenderer {
         return false;
     }
 
+    private static ClickGuiSection sectionById(String id) {
+        for (ClickGuiTabEntry tab : currentTabs()) {
+            if (tab.id().equals(id)) {
+                return tab.section();
+            }
+        }
+        return null;
+    }
+
     private static ClickGuiSection getActiveSection() {
         List<ClickGuiTabEntry> tabs = currentTabs();
         ensureActiveTab(tabs);
@@ -1044,13 +1056,17 @@ public enum ClickGuiRenderer {
         return out;
     }
 
-    private static ClickGuiSection sectionById(String id) {
-        for (ClickGuiTabEntry tab : currentTabs()) {
-            if (tab.id().equals(id)) {
-                return tab.section();
+    /** Lets the Dynamic Island leave clicks on the music tab to ClickGUI. */
+    public static boolean isMediaPlayerTabHit(float mx, float my) {
+        if (!isInputReady() || mx < tabBarX || mx > tabBarX + tabBarW
+                || my < tabBarY || my > tabBarY + tabBarH) return false;
+        List<ClickGuiTabEntry> tabs = currentTabs();
+        for (int i = 0; i < tabs.size(); i++) {
+            if ("combatant:mediaplayer".equals(tabs.get(i).id())) {
+                return i < tabX.length && mx >= tabX[i] && mx <= tabX[i] + tabW[i];
             }
         }
-        return null;
+        return false;
     }
 
     private static void ensureActiveTab(List<ClickGuiTabEntry> tabs) {

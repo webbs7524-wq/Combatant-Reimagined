@@ -41,7 +41,7 @@ import java.util.Map;
 @ModuleInfo(
         id = "nodelay",
         displayName = "NoDelay",
-        aliases = {"FastUse", "FastBreak", "FastPlace"},
+        aliases = {"FastUse", "FastBreak"},
         category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.EXPLOIT,
         description = "module.nodelay.description")
 public final class NoDelay extends Module {
@@ -61,6 +61,7 @@ public final class NoDelay extends Module {
     private static final String TYPE_JUMP = "Jump";
     private static final String TYPE_RIGHT_CLICK = "Right Click";
     private static final String TYPE_BLOCK_PLACE = "Block Place";
+    private static final String TYPE_FAST_PLACE = "Fast Place";
     private static final String TYPE_BREAK_COOLDOWN = "Break CoolDown";
     private static final String TYPE_FAST_BREAK = "Fast Break";
     private static final String TYPE_FAST_THROW = "Fast throw";
@@ -111,6 +112,7 @@ public final class NoDelay extends Module {
         defaults.put(TYPE_JUMP, true);
         defaults.put(TYPE_RIGHT_CLICK, true);
         defaults.put(TYPE_BLOCK_PLACE, false);
+        defaults.put(TYPE_FAST_PLACE, false);
         defaults.put(TYPE_BREAK_COOLDOWN, true);
         defaults.put(TYPE_FAST_BREAK, true);
         defaults.put(TYPE_FAST_THROW, true);
@@ -128,7 +130,7 @@ public final class NoDelay extends Module {
 
         if (types.get(TYPE_RIGHT_CLICK)) {
             ((MinecraftAccessor) mc).combatant$setItemUseCooldown(0);
-        } else if (types.get(TYPE_BLOCK_PLACE)) {
+        } else if (types.get(TYPE_BLOCK_PLACE) || types.get(TYPE_FAST_PLACE)) {
             applyBlockPlaceCooldown();
         }
 

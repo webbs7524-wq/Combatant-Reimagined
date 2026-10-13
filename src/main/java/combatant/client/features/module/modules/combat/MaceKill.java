@@ -21,13 +21,18 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import combatant.client.config.common.CommonSettingSchemas;
+import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.events.EventHandler;
+import combatant.client.events.impl.GameTickEvent;
 import combatant.client.events.impl.PacketEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
+import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.combat.MaceSmash;
 
 //Такая хуйня на более менее ач работать не будет
 // thx liquidbounce
@@ -39,21 +44,44 @@ import combatant.client.features.module.ModuleSubcategory;
 public final class MaceKill extends Module {
     public static boolean cancelCrit;
 
+    private static final int MAX_BOOST_HEIGHT = 170;
+
     private final Minecraft mc = Minecraft.getInstance();
+    // custom = the fall height below, forged into movement packets; grim (default) = no forged movement
+    // packet at all, only a real falling smash, because Grim's Simulation and TimerLimit measure exactly the
+    // forged groundless/teleport packets; vanilla = the boost at maximum height for servers without an anti-cheat.
+    private final EnumValue<AntiCheatPreset> anticheat =
+            enumCommon("anticheat_mode", CommonSettingSchemas.ANTICHEAT_MODE, AntiCheatPreset.GRIM);
     private final NumberValue<Integer> fallHeight =
-            num("height", 22, 1, 170);
+            visibleWhen(num("height", 22, 1, MAX_BOOST_HEIGHT), this::forgesMovementPackets);
 
     @EventHandler
     public void onPacketSend(PacketEvent.Send event) {
         if (!isEnabled() || event.isCancelled()) return;
         if (!(event.getPacket() instanceof ServerboundAttackPacket packet)) return;
-
-        Entity ent = getEntity(packet);
-        if (ent == null || cancelCrit) return;
-
+        if (!forgesMovementPackets() || cancelCrit) return;
         if (!isHoldingMace()) return;
 
+        Entity ent = getEntity(packet);
+        if (ent == null) return;
+
         doCrit();
+    }
+
+    /**
+     * Grim path: the smash is our own attack, sent from the pre-tick hook (in front of the tick's movement
+     * packet, like a vanilla click) and with no forged movement packets, so no Post/TimerLimit/Simulation.
+     */
+    @EventHandler
+    private void onGameTick(GameTickEvent event) {
+        if (!isEnabled() || forgesMovementPackets()) return;
+
+        MaceSmash.INSTANCE.strike(mc);
+    }
+
+    /** Only custom and vanilla write movement packets onto the wire. */
+    private boolean forgesMovementPackets() {
+        return MaceSmash.forgesMovementPackets(anticheat.get());
     }
 
     private void doCrit() {
@@ -100,7 +128,7 @@ public final class MaceKill extends Module {
         if (mc == null || mc.player == null || mc.level == null) return 0;
 
         AABB bb = mc.player.getBoundingBox();
-        int max = fallHeight.get();
+        int max = anticheat.get().pick(fallHeight.get(), fallHeight.get(), MAX_BOOST_HEIGHT);
         for (int i = max; i >= 1; i--) {
             AABB shifted = bb.move(0.0, i, 0.0);
             if (isBoxClear(shifted)) {

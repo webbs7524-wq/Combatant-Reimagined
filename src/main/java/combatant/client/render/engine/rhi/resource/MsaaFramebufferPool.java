@@ -9,6 +9,7 @@ package combatant.client.render.engine.rhi.resource;
 
 import com.mojang.blaze3d.GpuFormat;
 import combatant.client.render.engine.msaa.MsaaFramebuffer;
+import combatant.client.util.logging.DebugLog;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -39,6 +40,8 @@ public final class MsaaFramebufferPool implements AutoCloseable {
     private final ArrayDeque<MsaaFramebuffer> lru = new ArrayDeque<>();
     private final Map<MsaaFramebuffer, String> availableKeys = new IdentityHashMap<>();
     private final Map<MsaaFramebuffer, Long> bytes = new IdentityHashMap<>();
+    /** Distinguishes stale allocations parked after a mid-frame descriptor change. */
+    private long staleTransientSerial;
 
     private long acquires;
     private long reuses;
@@ -71,12 +74,20 @@ public final class MsaaFramebufferPool implements AutoCloseable {
         String logicalKey = descriptor.logicalKey();
         FrameTransient existing = frameLive.get(logicalKey);
         if (existing != null) {
-            if (!existing.descriptor.compatibilityKey().equals(descriptor.compatibilityKey())) {
-                throw new IllegalStateException("Transient MSAA descriptor changed while live: "
-                        + logicalKey + " old=" + existing.descriptor.compatibilityKey()
-                        + " new=" + descriptor.compatibilityKey());
+            if (existing.descriptor.compatibilityKey().equals(descriptor.compatibilityKey())) {
+                return existing.target;
             }
-            return existing.target;
+            // The window/surface can change size between two uses of one logical target inside a single
+            // frame (startup window sizing, a manual resize, or a fullscreen toggle). That is an external
+            // event rather than a renderer logic error, and failing the frame over it aborts rendering.
+            // Park the stale allocation under a unique key so the normal frame-tail release still returns
+            // it to the pool - it stays alive and untouched for anything still sampling it this frame -
+            // then allocate a correctly sized target for the logical slot below.
+            frameLive.put(logicalKey + "#stale#" + (++staleTransientSerial), existing);
+            DebugLog.warnOnce("msaa-frame-transient-resize:" + logicalKey,
+                    "MSAA frame transient %s changed descriptor inside one frame (old=%s new=%s); "
+                            + "reallocating it for the rest of the frame",
+                    logicalKey, existing.descriptor.compatibilityKey(), descriptor.compatibilityKey());
         }
 
         String compatibilityKey = descriptor.compatibilityKey();

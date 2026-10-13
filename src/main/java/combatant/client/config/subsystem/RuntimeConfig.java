@@ -10,6 +10,8 @@ package combatant.client.config.subsystem;
 import combatant.client.config.SettingDef;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.ModeValue;
+import combatant.client.features.module.Module;
+import combatant.client.features.module.ModuleManager;
 import combatant.client.util.logging.DebugLog;
 import combatant.client.util.logging.DebugMode;
 
@@ -25,6 +27,18 @@ public final class RuntimeConfig extends SubsystemConfig {
     private final BooleanValue forcePvp = bool("forcePvp", false);
     private final BooleanValue disableNarrator = bool("disableNarrator", true);
     private final BooleanValue nativeGuardWindowsX8664 = bool("combatant.nativeguard.windows-x86_64", false);
+    /**
+     * Master gate for experimental modules. Experimental modules can only be enabled while this is on,
+     * and turning it off disables every experimental module. Direct {@code set} calls (from the settings
+     * UI or config) go through the override so the gate always holds.
+     */
+    private final BooleanValue experimentalModules = value(new BooleanValue("experimentalModulesEnabled", false) {
+        @Override
+        public void set(Boolean enabled) {
+            super.set(enabled);
+            if (!Boolean.TRUE.equals(enabled)) disableExperimentalModules();
+        }
+    });
 
     private RuntimeConfig() {
         loadConfig();
@@ -71,6 +85,27 @@ public final class RuntimeConfig extends SubsystemConfig {
     public void setNativeGuardWindowsX8664Enabled(boolean enabled) {
         nativeGuardWindowsX8664.set(enabled);
         saveConfig();
+    }
+
+    public boolean isExperimentalModulesEnabled() {
+        return experimentalModules.get();
+    }
+
+    public BooleanValue experimentalModulesValue() {
+        return experimentalModules;
+    }
+
+    public void setExperimentalModulesEnabled(boolean enabled) {
+        experimentalModules.set(enabled);
+        saveConfig();
+    }
+
+    private static void disableExperimentalModules() {
+        for (Module module : ModuleManager.getModules()) {
+            if (module != null && module.isExperimental() && module.isEnabled()) {
+                module.setEnabled(false);
+            }
+        }
     }
 
     @Override

@@ -8,6 +8,7 @@
 package combatant.client.render.engine.postprocess;
 
 import combatant.client.config.MainConfig;
+import combatant.client.config.subsystem.VisualConfig;
 import combatant.client.features.theme.Theme;
 import combatant.client.features.theme.Themes;
 import combatant.client.render.engine.RenderState;
@@ -24,13 +25,20 @@ import com.mojang.blaze3d.ProjectionType;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
+import combatant.client.util.logging.DebugLog;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ProjectionMatrixBuffer;
 import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 import org.joml.Matrix4f;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalTime;
 import java.util.Locale;
 
@@ -53,6 +61,11 @@ public enum MenuBackgroundRenderer {
             "combatant", "textures/mainmenu/mountains-dusk.png");
     public static final Identifier NIGHT_TEXTURE = Identifier.fromNamespaceAndPath(
             "combatant", "textures/mainmenu/night-mountains.png");
+    /** Texture slot for the user-picked background; re-registered whenever the configured path changes. */
+    private static final Identifier CUSTOM_TEXTURE = Identifier.fromNamespaceAndPath(
+            "combatant", "textures/mainmenu/custom-background");
+    private static String customLoadedPath;
+    private static boolean customLoaded;
     private static final Identifier[] PREWARM_TEXTURES = {
             MORNING_TEXTURE, DEFAULT_TEXTURE, DUSK_TEXTURE, NIGHT_TEXTURE
     };
@@ -102,7 +115,35 @@ public enum MenuBackgroundRenderer {
             case AURORA -> renderShader(mc, PostProcessRenderPipelines.MAIN_MENU_AURORA_BACKGROUND);
             case WAVES -> renderShader(mc, PostProcessRenderPipelines.MAIN_MENU_WAVES_BACKGROUND);
             case PNG -> renderDefaultTexture(mc);
+            case CUSTOM -> renderCustomTexture(mc);
         }
+    }
+
+    /** Renders the user's custom image cover-fit; falls back to the time-of-day PNG if it cannot load. */
+    public static void renderCustomTexture(Minecraft mc) {
+        if (!RuntimeGate.canRunRender() || mc == null) return;
+        if (!ensureCustomTexture(mc, VisualConfig.get().getCustomMenuBackgroundPath())) {
+            renderDefaultTexture(mc);
+            return;
+        }
+        renderTexturePair(mc, CUSTOM_TEXTURE, CUSTOM_TEXTURE, 1.0f);
+    }
+
+    private static boolean ensureCustomTexture(Minecraft mc, String path) {
+        if (path == null || path.isBlank()) return false;
+        if (path.equals(customLoadedPath)) return customLoaded;
+        customLoadedPath = path;
+        customLoaded = false;
+        try (InputStream input = Files.newInputStream(Path.of(path))) {
+            NativeImage image = NativeImage.read(input);
+            mc.getTextureManager().register(CUSTOM_TEXTURE,
+                    new DynamicTexture(() -> "combatant_custom_menu_background", image));
+            customLoaded = true;
+        } catch (IOException | RuntimeException e) {
+            DebugLog.errorOnce("custom-menu-background",
+                    "[MenuBackgroundRenderer] Could not load custom menu background: " + path, e);
+        }
+        return customLoaded;
     }
 
     /** Renders the system-time PNG background and crossfades whenever the active time band changes. */
@@ -127,6 +168,7 @@ public enum MenuBackgroundRenderer {
         return switch (configured.trim().toLowerCase(Locale.ROOT)) {
             case "aurora" -> BackgroundMode.AURORA;
             case "waves" -> BackgroundMode.WAVES;
+            case "custom" -> BackgroundMode.CUSTOM;
             default -> BackgroundMode.PNG;
         };
     }
@@ -339,7 +381,8 @@ public enum MenuBackgroundRenderer {
     private enum BackgroundMode {
         PNG,
         AURORA,
-        WAVES
+        WAVES,
+        CUSTOM
     }
 
     private enum TimeBand {

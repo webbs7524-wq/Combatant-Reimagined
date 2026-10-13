@@ -1113,7 +1113,7 @@ public final class ModulesMenuScreen {
             case MOVEMENT -> 1; // procedural ice wind / blizzard
             case VISUALS -> 2;  // rapidly growing faceted crystals
             case OTHER -> 3;    // procedural water
-            case PLAYER -> 4;   // restrained pearlescent fallback for the remaining category
+            case PLAYER -> 4; // restrained pearlescent fallback
         };
     }
 

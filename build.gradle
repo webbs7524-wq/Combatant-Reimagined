@@ -155,6 +155,15 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
+    def javafxVersion = "25.0.2"
+    def javafxOs = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT)
+    def javafxArch = System.getProperty("os.arch", "").toLowerCase(java.util.Locale.ROOT)
+    def javafxPlatform = javafxOs.contains("win") ? "win" : javafxOs.contains("mac") ? "mac" : "linux"
+    def javafxClassifier = javafxPlatform + ((javafxArch.contains("aarch64") || javafxArch.contains("arm64")) ? "-aarch64" : "")
+    bundledLibrary "org.openjfx:javafx-base:${javafxVersion}:${javafxClassifier}"
+    bundledLibrary "org.openjfx:javafx-graphics:${javafxVersion}:${javafxClassifier}"
+    bundledLibrary "org.openjfx:javafx-media:${javafxVersion}:${javafxClassifier}"
+
 
     // Renderer targets. Sodium is required; Iris stays optional but available in dev runtime.
     compileOnly "maven.modrinth:sodium:${project.sodium_version}"

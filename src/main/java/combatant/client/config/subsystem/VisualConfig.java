@@ -11,6 +11,7 @@ import combatant.client.config.SettingDef;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.ModeValue;
 import combatant.client.config.values.NumberValue;
+import combatant.client.config.values.StringValue;
 import combatant.client.render.iris.IrisAaIntegration;
 import combatant.client.render.iris.IrisAaOwner;
 
@@ -21,7 +22,9 @@ public final class VisualConfig extends SubsystemConfig {
     public static final VisualConfig INSTANCE = new VisualConfig();
 
     private final BooleanValue combatantMainMenu = bool("combatantMainMenu", true);
-    private final ModeValue menuBackground = mode("menuBackground", "png", "png", "aurora", "waves");
+    private final ModeValue menuBackground = mode("menuBackground", "png", "png", "aurora", "waves", "custom");
+    /** Absolute path to a user-picked PNG/JPG used when menuBackground is "custom". */
+    private final StringValue customMenuBackgroundPath = value(new StringValue("customMenuBackgroundPath", ""));
     private final BooleanValue menuClockShowSeconds = bool("menuClockShowSeconds", false);
     /** Canonical world anti-aliasing owner. MSAA and TAA are mutually exclusive. */
     private final ModeValue antialiasing3d = mode("antialiasing3d", "off", "off", "msaa", "taa");
@@ -52,6 +55,20 @@ public final class VisualConfig extends SubsystemConfig {
     public String getMenuBackgroundMode() {
         String mode = menuBackground.get();
         return mode != null ? mode : "png";
+    }
+
+    public String getCustomMenuBackgroundPath() {
+        String path = customMenuBackgroundPath.get();
+        return path == null ? "" : path.trim();
+    }
+
+    public void setCustomMenuBackgroundPath(String path) {
+        customMenuBackgroundPath.set(path == null ? "" : path.trim());
+        saveConfig();
+    }
+
+    public boolean isCustomMenuBackgroundMode() {
+        return "custom".equalsIgnoreCase(getMenuBackgroundMode());
     }
 
     public boolean isMenuClockShowSeconds() {
@@ -159,6 +176,8 @@ public final class VisualConfig extends SubsystemConfig {
                         .visibleWhen(() -> isTaaSelected() && taaSharpen.get()),
                 SettingDef.bool(combatantMainMenu),
                 SettingDef.mode(menuBackground).visibleWhen(combatantMainMenu::get),
+                SettingDef.text(customMenuBackgroundPath)
+                        .visibleWhen(() -> combatantMainMenu.get() && isCustomMenuBackgroundMode()),
                 SettingDef.bool(menuClockShowSeconds),
                 SettingDef.bool(modernSodiumGui),
                 SettingDef.bool(modernIrisGui)

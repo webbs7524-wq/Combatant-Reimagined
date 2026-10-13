@@ -211,12 +211,15 @@ public enum ModuleManager {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || !RuntimeGate.canRunModules()) return;
         if (!ProfilerPhase.isActive()) {
-            for (Module m : modulesSnapshot) runModule(m, "tick", () -> {
-                if (ModuleExtensionManager.beforeTick(m)) {
-                    m.onTick();
-                    ModuleExtensionManager.afterTick(m);
-                }
-            });
+            for (Module m : modulesSnapshot) {
+                if (!m.isEnabled()) continue;
+                runModule(m, "tick", () -> {
+                    if (ModuleExtensionManager.beforeTick(m)) {
+                        m.onTick();
+                        ModuleExtensionManager.afterTick(m);
+                    }
+                });
+            }
             return;
         }
         try (ProfilerPhase.Scope ignored = ProfilerPhase.scope("modules:tick")) {
@@ -239,12 +242,15 @@ public enum ModuleManager {
         FailureDiagnostics.drain();
         if (!RuntimeGate.canRunModules()) return;
         if (!ProfilerPhase.isActive()) {
-            for (Module m : modulesSnapshot) runModule(m, "frame", () -> {
-                if (ModuleExtensionManager.beforeFrame(m, frameDeltaTicks)) {
-                    m.onFrame(frameDeltaTicks);
-                    ModuleExtensionManager.afterFrame(m, frameDeltaTicks);
-                }
-            });
+            for (Module m : modulesSnapshot) {
+                if (!m.isEnabled()) continue;
+                runModule(m, "frame", () -> {
+                    if (ModuleExtensionManager.beforeFrame(m, frameDeltaTicks)) {
+                        m.onFrame(frameDeltaTicks);
+                        ModuleExtensionManager.afterFrame(m, frameDeltaTicks);
+                    }
+                });
+            }
             return;
         }
         try (ProfilerPhase.Scope ignored = ProfilerPhase.scope("modules:frame")) {
@@ -268,6 +274,7 @@ public enum ModuleManager {
         if (phaseModules == null) return;
         if (!ProfilerPhase.isActive()) {
             for (Module m : phaseModules) {
+                if (!m.isEnabled()) continue;
                 runModule(m, "hud", () -> m.onRender2D(ctx, tickDelta));
             }
             return;
@@ -344,6 +351,7 @@ public enum ModuleManager {
         if (phaseModules == null) return;
         if (!ProfilerPhase.isActive()) {
             for (Module m : phaseModules) {
+                if (!m.isEnabled()) continue;
                 runModule(m, "world legacy", () -> m.onRenderWorld(matrices, consumers, tickDelta));
             }
             return;

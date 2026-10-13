@@ -47,7 +47,9 @@ public enum ModulesMenuCategory {
     }
 
     public List<ModuleSubcategoryDefinition> subcategories() {
-        return ModuleSubcategoryRegistry.forCategory(moduleCategory);
+        return moduleCategory == null
+                ? List.of()
+                : ModuleSubcategoryRegistry.forCategory(moduleCategory);
     }
 
     boolean matches(ModuleCategory category) {

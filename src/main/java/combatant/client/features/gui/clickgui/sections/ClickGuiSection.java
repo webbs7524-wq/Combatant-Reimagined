@@ -25,6 +25,9 @@ public interface ClickGuiSection {
     default void mouseReleased(float mouseX, float mouseY, int button) {
     }
 
+    default void mouseMoved(float mouseX, float mouseY) {
+    }
+
     default boolean mouseScrolled(float mouseX, float mouseY, double amount) {
         return false;
     }

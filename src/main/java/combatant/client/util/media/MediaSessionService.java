@@ -306,7 +306,10 @@ public final class MediaSessionService {
         List<IMediaSession> sessions = mediaSessions;
         long now = Util.getMillis();
         if (sessions.isEmpty()) {
-            if (currentSession != null && now - lastSessionSeenMs < SESSION_GRACE_MS) {
+            // Windows drops paused sessions from the list; keep the last one visible until it resumes
+            // (or a different session appears), instead of hiding the panel after the short grace.
+            boolean lastPaused = currentMedia != null && !currentMedia.playing();
+            if (currentSession != null && (lastPaused || now - lastSessionSeenMs < SESSION_GRACE_MS)) {
                 return currentSession;
             }
             lastTrackKey = null;

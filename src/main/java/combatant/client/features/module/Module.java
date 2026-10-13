@@ -50,6 +50,7 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
     private final ModuleCategory category;
     private final ModuleSubcategory subcategory;
     private final String subcategoryId;
+    private final boolean experimental;
     private final BooleanValue enabledValue;
     private final EnumValue<ModuleActivationSource> activationSourceValue =
             new EnumValue<>("activation_source", ModuleActivationSource.NONE, ModuleActivationSource.class);
@@ -76,6 +77,7 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         this.category = info.category();
         this.subcategory = info.subcategory();
         this.subcategoryId = info.subcategoryId() == null ? "" : info.subcategoryId().trim();
+        this.experimental = info.experimental();
         this.enabledValue = new BooleanValue("enabled", info.enabledByDefault());
         this.keyBindSetting = createKeyBindSetting();
 
@@ -96,6 +98,7 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         this.category = category;
         this.subcategory = ModuleSubcategory.UNSPECIFIED;
         this.subcategoryId = "";
+        this.experimental = false;
         this.enabledValue = new BooleanValue("enabled", false);
         this.keyBindSetting = createKeyBindSetting();
 
@@ -929,6 +932,14 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         return category;
     }
 
+    /**
+     * True only for modules intentionally marked for the temporary Experimental panel.
+     * Existing modules remain in their declared category by default.
+     */
+    public boolean isExperimental() {
+        return experimental;
+    }
+
     public ModuleSubcategory getSubcategory() {
         return subcategory;
     }
@@ -969,6 +980,8 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         }
         if (state && !ErrorHandler.canRun(this)) return;
         if (state && !RuntimeGate.canRunModules() && !(this instanceof RuntimeControlModule)) return;
+        // Experimental modules stay off unless the master Experimental switch in Settings is on.
+        if (state && experimental && !combatant.client.config.subsystem.RuntimeConfig.get().isExperimentalModulesEnabled()) return;
         ModuleActivationSource normalized = normalizeActivationSource(state, source);
         if (enabled == state) {
             if (activationSource == normalized

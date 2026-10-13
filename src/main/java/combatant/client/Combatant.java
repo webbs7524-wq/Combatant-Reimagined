@@ -14,6 +14,8 @@ import combatant.client.render.map.PlayerLocationHudOverlay;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.runtime.*;
 import net.fabricmc.api.ClientModInitializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import net.fabricmc.loader.api.FabricLoader;
 import combatant.client.runtime.annotation.ClientBound;
 import combatant.client.runtime.annotation.ClientBoundLevel;
@@ -106,6 +108,26 @@ import combatant.client.util.time.TimerController;
         isolatedPackages = "combatant.client.runtime.isolated"
 )
 public class Combatant implements ClientModInitializer {
+    /**
+     * Startup timing. Mod client entrypoints run while Minecraft's loading screen is still up, so every
+     * millisecond spent here is visible as a stalled progress bar. These lines are deliberately always on
+     * (not routed through DebugLog, which is off by default) so a slow launch can be diagnosed from
+     * logs/latest.log without changing any setting: the last line printed is the stage that is stalling.
+     */
+    private static final Logger STARTUP_LOGGER = LoggerFactory.getLogger("Combatant/Startup");
+    private static final long STARTUP_ORIGIN_NS = System.nanoTime();
+
+    private static long logStartupStage(String stage, long stageStartNs) {
+        long now = System.nanoTime();
+        long stageMs = now - stageStartNs;
+        long totalMs = now - STARTUP_ORIGIN_NS;
+        STARTUP_LOGGER.info("[Combatant][Startup] {}: {}.{} ms (entrypoint total {}.{} ms)",
+                stage,
+                stageMs / 1_000_000L, Math.abs(stageMs / 100_000L) % 10L,
+                totalMs / 1_000_000L, Math.abs(totalMs / 100_000L) % 10L);
+        return now;
+    }
+
 
     @UsedImplicitly
     @RuntimeSuspend(order = 100)
@@ -528,8 +550,11 @@ public class Combatant implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        long stageNs = System.nanoTime();
         NativeMemoryGuard.initialize();
+        stageNs = logStartupStage("native-guard", stageNs);
         CombatantRenderEngineBootstrap.init();
+        stageNs = logStartupStage("render-engine-bootstrap", stageNs);
         PostProcessManager.register(new NetherPortalRiftPass());
         PostProcessManager.register(new SleepOverlayPass());
         PostProcessManager.register(WorldPostProcessMasks.INSTANCE);
@@ -537,12 +562,15 @@ public class Combatant implements ClientModInitializer {
         PostProcessManager.register(WorldBlastShockwaves.INSTANCE);
         PostProcessManager.register(WorldTargetLenses.INSTANCE);
         PostProcessManager.register(WorldOrbitGravity.INSTANCE);
+        stageNs = logStartupStage("post-process-registration", stageNs);
         MainConfig.get(); // Load global settings (debug flag)
         AccountConfig.get();
         ProxyBackend.init();
+        stageNs = logStartupStage("config-and-proxy", stageNs);
         combatant.client.features.gui.chat.diagnostics.FailureDiagnostics.initialize();
         CommandManager.init();
         MediaSessionService.get().init();
+        stageNs = logStartupStage("diagnostics-commands-media", stageNs);
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> RenderPrewarmManager.onClientStarted());
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             // Stop all Combatant callbacks before native-backed subsystems begin one-way shutdown.
@@ -562,10 +590,13 @@ public class Combatant implements ClientModInitializer {
         AddonManager.prepareModuleLoading();
         ModuleAutoLoader.load("combatant.client.features.module.modules");
         AddonManager.init();
+        stageNs = logStartupStage("module-discovery", stageNs);
         ModuleManager.loadAllModuleConfigs();
+        stageNs = logStartupStage("module-configs", stageNs);
         AddonManager.notifyClientReady();
         HudElements.init();
         StaticHudElementBootstrap.init(); // init vanilla HUD elements config
+        stageNs = logStartupStage("hud-init", stageNs);
         Events.BUS.register(I18nPreflightContributors.INSTANCE);
         Events.BUS.register(RenderPrewarmContributors.INSTANCE);
         Events.BUS.register(RotationManager.INSTANCE);
@@ -587,6 +618,7 @@ public class Combatant implements ClientModInitializer {
         Events.BUS.register(FakeLagController.INSTANCE);
         Events.BUS.register(BacktrackController.INSTANCE);
         Events.BUS.register(TimerController.INSTANCE);
+        stageNs = logStartupStage("event-registration", stageNs);
 
         // -------- КЛЮЧЕВЫЕ ИВЕНТЫ --------
 
@@ -729,5 +761,6 @@ public class Combatant implements ClientModInitializer {
         registerRuntimeLifecycle();
         ClientRuntime.markActive("client initialized");
         RenderPrewarmManager.prewarm("client initialized");
+        logStartupStage("client-entrypoint-total", STARTUP_ORIGIN_NS);
     }
 }

@@ -9,6 +9,7 @@ package combatant.client.render.engine.rhi.resource;
 
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.TextureTarget;
+import combatant.client.util.logging.DebugLog;
 
 import java.util.*;
 
@@ -34,6 +35,8 @@ public final class FramebufferPool implements AutoCloseable {
     private final Map<TextureTarget, Long> transientBytes = new IdentityHashMap<>();
     private final ResourceLeakTracker leakTracker;
     private final Map<TextureTarget, String> borrowedKeys = new IdentityHashMap<>();
+    /** Distinguishes stale allocations parked after a mid-frame descriptor change. */
+    private long staleTransientSerial;
 
     private long borrows;
     private long releases;
@@ -130,12 +133,20 @@ public final class FramebufferPool implements AutoCloseable {
         String logicalKey = descriptor.logicalKey();
         FrameTransient existing = frameTransient.get(logicalKey);
         if (existing != null) {
-            if (!existing.descriptor.compatibilityKey().equals(descriptor.compatibilityKey())) {
-                throw new IllegalStateException("Transient target descriptor changed while live: "
-                        + logicalKey + " old=" + existing.descriptor.compatibilityKey()
-                        + " new=" + descriptor.compatibilityKey());
+            if (existing.descriptor.compatibilityKey().equals(descriptor.compatibilityKey())) {
+                return existing.target;
             }
-            return existing.target;
+            // The window/surface can change size between two uses of one logical target inside a single
+            // frame (startup window sizing, a manual resize, or a fullscreen toggle). That is an external
+            // event rather than a renderer logic error, and failing the frame over it aborts rendering.
+            // Park the stale allocation under a unique key so the normal frame-tail release still returns
+            // it to the pool - it stays alive and untouched for anything still sampling it this frame -
+            // then allocate a correctly sized target for the logical slot below.
+            frameTransient.put(logicalKey + "#stale#" + (++staleTransientSerial), existing);
+            DebugLog.warnOnce("framebuffer-frame-transient-resize:" + logicalKey,
+                    "Frame transient %s changed descriptor inside one frame (old=%s new=%s); "
+                            + "reallocating it for the rest of the frame",
+                    logicalKey, existing.descriptor.compatibilityKey(), descriptor.compatibilityKey());
         }
 
         Queue<TextureTarget> compatible = availableTransient.computeIfAbsent(

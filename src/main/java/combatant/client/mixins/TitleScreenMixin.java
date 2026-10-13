@@ -21,7 +21,9 @@ import combatant.client.runtime.RuntimeGate;
 @Mixin(TitleScreen.class)
 public abstract class TitleScreenMixin {
 
-    @Inject(method = "init", at = @At("HEAD"), cancellable = true)
+    // Runs on the first vanilla tick instead of cancelling init(), so the real TitleScreen
+    // lifecycle still happens and other mods' TitleScreen hooks (e.g. Crash Assistant) see it.
+    @Inject(method = "tick", at = @At("HEAD"))
     private void combatant$replaceTitleScreen(CallbackInfo ci) {
         if (!RuntimeGate.canRunRender()) return;
         if (!MainConfig.get().isCombatantMainMenuEnabled()) return;
@@ -30,7 +32,6 @@ public abstract class TitleScreenMixin {
         if (mc == null) return;
         if (ClientScreen.current() instanceof CombatantMainMenuScreen) return;
         ClientScreen.show(mc, new CombatantMainMenuScreen());
-        ci.cancel();
     }
 }
 

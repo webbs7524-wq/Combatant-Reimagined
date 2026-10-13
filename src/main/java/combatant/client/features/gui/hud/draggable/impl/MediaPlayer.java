@@ -34,6 +34,7 @@ import combatant.client.render.engine.renderer.ui.runtime.core.UiMaterialInterac
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.FontInfo;
 import combatant.client.render.engine.text.TextRenderer;
+import combatant.client.util.media.LocalMediaPlayerService;
 import combatant.client.util.media.MediaInfo;
 import combatant.client.util.media.MediaSessionService;
 import combatant.client.util.media.RepeatMode;
@@ -153,6 +154,8 @@ public final class MediaPlayer extends DraggableHudElement {
     private boolean lastTransportPlaying;
     private String lastTransportTrack = "";
     private long lastTransportPosition;
+    /** True while the panel shows the media tab's track because no PC media session is active. */
+    private boolean localSource;
 
     private void updateGlassTransport(MediaSessionService.Snapshot snapshot) {
         if (snapshot == null || !snapshot.hasSession()) {
@@ -267,6 +270,10 @@ public final class MediaPlayer extends DraggableHudElement {
     @Override
     public boolean isMouseOverInteractive(float mx, float my) {
         if (!(ClientScreen.current() instanceof ChatScreen)) return false;
+        if (localSource) {
+            return (progressW > 0f && hit(mx, my, progressX - 2f, progressY - 5f, progressW + 4f, progressH + 10f))
+                    || (buttonSize > 0f && hit(mx, my, playX, playY, buttonSize, buttonSize));
+        }
         boolean hasSession = currentSnapshot != null && currentSnapshot.hasSession();
         if (!hasSession) return false;
         boolean seekHit = currentSnapshot.supportsSeek() && progressW > 0f
@@ -284,9 +291,20 @@ public final class MediaPlayer extends DraggableHudElement {
 
     @Override
     public boolean onMouseClicked(float mx, float my, int button) {
-        if (!(ClientScreen.current() instanceof ChatScreen)) return false;
+        if (!(ClientScreen.current() instanceof ChatScreen) || button != 0) return false;
+        if (localSource) {
+            if (progressW > 0f && hit(mx, my, progressX - 2f, progressY - 5f, progressW + 4f, progressH + 10f)) {
+                LocalMediaPlayerService.seek(clamp01((mx - progressX) / progressW));
+                progressPress = 1.0f;
+                return true;
+            }
+            if (buttonSize > 0f && hit(mx, my, playX, playY, buttonSize, buttonSize)) {
+                LocalMediaPlayerService.playPause();
+                return true;
+            }
+            return false;
+        }
         if (currentSnapshot == null || !currentSnapshot.hasSession()) return false;
-        if (button != 0) return false;
 
         boolean consumed = false;
         try {
@@ -330,12 +348,15 @@ public final class MediaPlayer extends DraggableHudElement {
         if (mc == null) return;
         boolean chatOpen = ClientScreen.current() instanceof ChatScreen;
         boolean preview = DraggableHudElementRegistry.isForceVisible();
-
+        LocalMediaPlayerService.Snapshot localSnapshot = LocalMediaPlayerService.snapshot();
         MediaSessionService.Snapshot snapshot = mediaService.snapshot();
         currentSnapshot = snapshot;
         if (isGlassEffect()) updateGlassTransport(snapshot);
         MediaInfo media = snapshot.media();
-        boolean hasSession = snapshot.hasSession();
+        boolean sessionActive = snapshot.hasSession();
+        // PC media wins; the media tab's track fills the same panel when no PC session is active.
+        localSource = !sessionActive && !localSnapshot.title().isBlank();
+        boolean hasSession = sessionActive || localSource;
         boolean mediaAvailable = snapshot.mediaAvailable();
         boolean shouldShow = hasSession || chatOpen || preview;
 
@@ -374,16 +395,23 @@ public final class MediaPlayer extends DraggableHudElement {
         float metaScale = 0.70f * fontScale;
         float iconScale = 0.9f * fontScale;
 
-        String title = hasSession ? safe(media.title()) : "";
-        String artist = hasSession ? safe(media.artist()) : "";
-        String owner = hasSession && snapshot.session() != null ? safe(snapshot.session().getOwner()) : "";
-        long predictedPos = hasSession ? snapshot.predictedPositionSeconds() : 0L;
-        long predictedDur = hasSession ? snapshot.durationSeconds() : 0L;
+        String title = localSource ? safe(localSnapshot.title()) : sessionActive ? safe(media.title()) : "";
+        String artist = sessionActive ? safe(media.artist()) : "";
+        String owner = localSource ? "Media tab"
+                : sessionActive && snapshot.session() != null ? safe(snapshot.session().getOwner()) : "";
+        long predictedPos = localSource ? Math.min(Math.max(0L, localSnapshot.positionSeconds()), Math.max(0L, localSnapshot.durationSeconds()))
+                : sessionActive ? snapshot.predictedPositionSeconds() : 0L;
+        long predictedDur = localSource ? Math.max(0L, localSnapshot.durationSeconds())
+                : sessionActive ? snapshot.durationSeconds() : 0L;
         String timeText = hasSession ? formatTime(predictedPos) : "";
 
-        final boolean showShuffle = hasSession && snapshot.supportsShuffle();
-        final boolean showRepeat = hasSession && snapshot.supportsRepeat();
-        final int activeControls = 3 + (showShuffle ? 1 : 0) + (showRepeat ? 1 : 0);
+        final boolean showShuffle = sessionActive && snapshot.supportsShuffle();
+        final boolean showRepeat = sessionActive && snapshot.supportsRepeat();
+        // The media tab has no queue, so skip buttons are only shown for PC sessions.
+        final boolean showSkip = !localSource;
+        final boolean playing = localSource ? localSnapshot.playing() : snapshot.isPlaying();
+        final boolean canSeek = localSource ? predictedDur > 0L : sessionActive && snapshot.supportsSeek();
+        final int activeControls = (showSkip ? 3 : 1) + (showShuffle ? 1 : 0) + (showRepeat ? 1 : 0);
         final float btnSizeBase = BASE_BUTTON_SIZE * baseScale;
 
         String titleText = hasSession ? title : "";
@@ -539,7 +567,7 @@ public final class MediaPlayer extends DraggableHudElement {
         float drawArtSize = artSize * scale;
         float artRadius = Math.min(radius * 1.2f, artSize * 0.22f) * scale;
 
-        Identifier artworkTexture = snapshot.artworkTexture();
+        Identifier artworkTexture = localSource ? null : snapshot.artworkTexture();
         if (artworkTexture != null) {
             Renderer2D.TEXTURE.roundedTexRect(drawArtX, drawArtY, drawArtSize, drawArtSize, artRadius,
                     1.0f, HudRenderUtil.scaleAlpha(0xFFFFFFFF, scale), artworkTexture);
@@ -591,17 +619,25 @@ public final class MediaPlayer extends DraggableHudElement {
             shuffleX = shuffleY = 0f;
         }
 
-        prevX = drawX + cursorX * scale;
-        prevY = drawY + controlsY * scale;
-        cursorX += btnSizeBase + buttonGap;
+        if (showSkip) {
+            prevX = drawX + cursorX * scale;
+            prevY = drawY + controlsY * scale;
+            cursorX += btnSizeBase + buttonGap;
+        } else {
+            prevX = prevY = 0f;
+        }
 
         playX = drawX + cursorX * scale;
-        playY = prevY;
+        playY = drawY + controlsY * scale;
         cursorX += btnSizeBase + buttonGap;
 
-        nextX = drawX + cursorX * scale;
-        nextY = prevY;
-        cursorX += btnSizeBase + buttonGap;
+        if (showSkip) {
+            nextX = drawX + cursorX * scale;
+            nextY = playY;
+            cursorX += btnSizeBase + buttonGap;
+        } else {
+            nextX = nextY = 0f;
+        }
 
         if (showRepeat) {
             repeatX = drawX + cursorX * scale;
@@ -615,7 +651,7 @@ public final class MediaPlayer extends DraggableHudElement {
         progressW = barW;
         progressH = baseBarH;
         progressPress = lerp(progressPress, 0f, 0.18f);
-        updateHover(chatOpen, showShuffle, showRepeat);
+        updateHover(chatOpen, showShuffle, showRepeat, showSkip, canSeek);
 
         float progressFocus = Math.max(progressHover, progressPress);
         float hoverExtra = 1.45f * baseScale * scale * progressFocus;
@@ -627,7 +663,7 @@ public final class MediaPlayer extends DraggableHudElement {
         renderer.roundedRect(barX, drawBarY, barW, drawBarH, barRadius, 1.0f, barBg);
         renderer.roundedRect(barX, drawBarY, barW * progress, drawBarH, barRadius, 1.0f, barFill);
 
-        if (snapshot.supportsSeek() && progressFocus > 0.015f && barW > 0f) {
+        if (canSeek && progressFocus > 0.015f && barW > 0f) {
             float thumbSize = Math.max(5.2f * baseScale * scale, drawBarH + 2.0f * baseScale * scale);
             float thumbRadius = thumbSize * 0.5f;
             float thumbX = barX + barW * progress;
@@ -689,18 +725,22 @@ public final class MediaPlayer extends DraggableHudElement {
                     shuffleColor(snapshot, scale), glassEnabled, shuffleLensFluid);
         }
 
-        drawControl(renderer, iconRenderer, iconString(ICON_PREV),
-                prevX, prevY, buttonSize, prevHover, scale, controlIconScale,
-                HudRenderUtil.scaleAlpha(uiText, scale), glassEnabled, prevLensFluid);
+        if (showSkip) {
+            drawControl(renderer, iconRenderer, iconString(ICON_PREV),
+                    prevX, prevY, buttonSize, prevHover, scale, controlIconScale,
+                    HudRenderUtil.scaleAlpha(uiText, scale), glassEnabled, prevLensFluid);
+        }
 
         drawControl(renderer, iconRenderer,
-                iconString(snapshot.isPlaying() ? ICON_PAUSE : ICON_PLAY),
+                iconString(playing ? ICON_PAUSE : ICON_PLAY),
                 playX, playY, buttonSize, playHover, scale, controlIconScale,
                 HudRenderUtil.scaleAlpha(uiText, scale), glassEnabled, playLensFluid);
 
-        drawControl(renderer, iconRenderer, iconString(ICON_NEXT),
-                nextX, nextY, buttonSize, nextHover, scale, controlIconScale,
-                HudRenderUtil.scaleAlpha(uiText, scale), glassEnabled, nextLensFluid);
+        if (showSkip) {
+            drawControl(renderer, iconRenderer, iconString(ICON_NEXT),
+                    nextX, nextY, buttonSize, nextHover, scale, controlIconScale,
+                    HudRenderUtil.scaleAlpha(uiText, scale), glassEnabled, nextLensFluid);
+        }
 
         if (showRepeat) {
             drawRepeatControl(renderer, snapshot, repeatX, repeatY, buttonSize, repeatHover, scale,
@@ -781,7 +821,7 @@ public final class MediaPlayer extends DraggableHudElement {
                 1f, eased * alpha, lensFluid, MEDIA_HOVER_GLASS, true, 0f, 0.65f);
     }
 
-    private void updateHover(boolean chatOpen, boolean showShuffle, boolean showRepeat) {
+    private void updateHover(boolean chatOpen, boolean showShuffle, boolean showRepeat, boolean showSkip, boolean canSeek) {
         if (!chatOpen) {
             playHover = lerp(playHover, 0f, 0.2f);
             shuffleHover = lerp(shuffleHover, 0f, 0.2f);
@@ -798,10 +838,10 @@ public final class MediaPlayer extends DraggableHudElement {
         float my = HudScale.toVirtual((float) mc.mouseHandler.ypos(), uiScale);
         shuffleHover = lerp(shuffleHover, showShuffle && hit(mx, my, shuffleX, shuffleY, buttonSize, buttonSize) ? 1f : 0f, 0.25f);
         playHover = lerp(playHover, hit(mx, my, playX, playY, buttonSize, buttonSize) ? 1f : 0f, 0.25f);
-        prevHover = lerp(prevHover, hit(mx, my, prevX, prevY, buttonSize, buttonSize) ? 1f : 0f, 0.25f);
-        nextHover = lerp(nextHover, hit(mx, my, nextX, nextY, buttonSize, buttonSize) ? 1f : 0f, 0.25f);
+        prevHover = lerp(prevHover, showSkip && hit(mx, my, prevX, prevY, buttonSize, buttonSize) ? 1f : 0f, 0.25f);
+        nextHover = lerp(nextHover, showSkip && hit(mx, my, nextX, nextY, buttonSize, buttonSize) ? 1f : 0f, 0.25f);
         repeatHover = lerp(repeatHover, showRepeat && hit(mx, my, repeatX, repeatY, buttonSize, buttonSize) ? 1f : 0f, 0.25f);
-        boolean seekHover = currentSnapshot != null && currentSnapshot.supportsSeek() && progressW > 0f
+        boolean seekHover = canSeek && progressW > 0f
                 && hit(mx, my, progressX - 2f, progressY - 5f, progressW + 4f, progressH + 10f);
         progressHover = lerp(progressHover, seekHover ? 1f : 0f, 0.25f);
     }

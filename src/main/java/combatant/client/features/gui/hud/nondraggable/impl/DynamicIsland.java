@@ -476,7 +476,8 @@ public final class DynamicIsland extends AbstractHudElement {
 
     @Override
     public boolean isMouseOverInteractive(float mx, float my) {
-        return mc != null && isInteractiveScreen(ClientScreen.current()) && contains(mx, my);
+        if (mc == null || !isInteractiveScreen(ClientScreen.current())) return false;
+        return (currentMode == IslandMode.CLICKGUI && ClickGuiRenderer.isMediaPlayerTabHit(mx, my)) || contains(mx, my);
     }
 
     @Override

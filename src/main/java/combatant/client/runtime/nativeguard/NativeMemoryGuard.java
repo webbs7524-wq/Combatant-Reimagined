@@ -38,6 +38,21 @@ public final class NativeMemoryGuard {
             return status;
         }
 
+        // The Windows DACL hardening runs inside JNI_OnLoad and makes external crash tools (for example
+        // Crash Assistant) misreport a healthy launch. Keep it opt-in via the runtime config flag.
+        if (os.contains("win")
+                && !combatant.client.config.subsystem.RuntimeConfig.get().isNativeGuardWindowsX8664Enabled()) {
+            status = new Status(true, false, 0, "disabled (Windows process guard is opt-in)");
+            return status;
+        }
+
+        // The Windows DLL applies a same-user process DACL as soon as it loads (JNI_OnLoad). That
+        // blocks access the external Crash Assistant tooling relies on, so it is never loaded on Windows.
+        if (os.contains("win")) {
+            status = new Status(true, false, 0, "disabled on Windows (process DACL conflicts with crash tooling)");
+            return status;
+        }
+
         String libraryName = resource.substring(resource.lastIndexOf('/') + 1);
 
         try (InputStream input = NativeMemoryGuard.class.getResourceAsStream(resource)) {

@@ -37,7 +37,8 @@ enum ModulesMenuResolver {
 
         for (Module module : ModuleManager.getModules()) {
             if (module == null) continue;
-            if (!category.matches(module.getCategory())) continue;
+            // Experimental modules live only in Settings → Experimental, never in module lists.
+            if (module.isExperimental() || !category.matches(module.getCategory())) continue;
             ModuleSubcategoryDefinition resolvedSubcategory = ModuleSubcategoryRegistry.resolve(module);
             if (subcategory != null
                     && (resolvedSubcategory == null || !resolvedSubcategory.key().equals(subcategory.key()))) continue;

@@ -45,4 +45,7 @@ public @interface ModuleInfo {
     String description() default "";
 
     boolean enabledByDefault() default false;
+
+    /** Whether this module belongs in the temporary Experimental module-browser panel. */
+    boolean experimental() default false;
 }

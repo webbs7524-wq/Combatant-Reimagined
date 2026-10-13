@@ -174,7 +174,7 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
         // Source-only hotfix: register the audio lifecycle hook without replacing
         // the consumer's potentially newer combatant.mixins.json resource.
         return FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT
-                ? List.of("SoundEngineLifecycleMixin") : List.of();
+                ? List.of("SoundEngineLifecycleMixin", "MusicManagerMixin") : List.of();
     }
 
     @Override
